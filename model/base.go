@@ -6,13 +6,18 @@ import (
 	"strings"
 	"time"
 	"regexp"
+	"utils"
+	"encoding/json"
+	"crypto/md5"
+	"encoding/hex"
+	"encoding/base64"
 )
 
 type baseController struct {
 	beego.Controller
 	time int64
 	onlineip string
-	//var $db;
+	db
 	//var $view;
 	user map[string]interface{}
 	settings map[string]interface{}
@@ -20,6 +25,18 @@ type baseController struct {
 	app map[string]interface{}
 	lang map[string]interface{}
 	input map[string]interface{}
+}
+
+_CACHE := make(map[string]map[string]interface{})
+
+function getgpc($k, $var='R') {
+	switch($var) {
+		case 'G': $var = &$_GET; break;
+		case 'P': $var = &$_POST; break;
+		case 'C': $var = &$_COOKIE; break;
+		case 'R': $var = &$_REQUEST; break;
+	}
+	return isset($var[$k]) ? $var[$k] : NULL;
 }
 
 func (this *baseController) Init() {
@@ -80,7 +97,7 @@ func (this *baseController) init_cache() {
 	}
 }
 
-func (this *baseController) init_input($getagent = '') {
+func (this *baseController) init_input(getagent string) {
 	$input = getgpc('input', 'R');
 	if($input) {
 		$input = $this->authcode($input, 'DECODE', $this->app['authkey']);
@@ -100,9 +117,10 @@ func (this *baseController) init_input($getagent = '') {
 }
 
 func (this *baseController) init_db() {
-	require_once UC_ROOT.'lib/db.class.php';
-	$this->db = new ucserver_db();
-	$this->db->connect(UC_DBHOST, UC_DBUSER, UC_DBPW, UC_DBNAME, UC_DBCHARSET, UC_DBCONNECT, UC_DBTABLEPRE);
+	this.db = orm.NewOrm()
+	//require_once UC_ROOT.'lib/db.class.php';
+	//$this->db = new ucserver_db();
+	//$this->db->connect(UC_DBHOST, UC_DBUSER, UC_DBPW, UC_DBNAME, UC_DBCHARSET, UC_DBCONNECT, UC_DBTABLEPRE);
 }
 
 func (this *baseController) init_app() {
@@ -146,56 +164,152 @@ func (this *baseController) init_mail() {
 	}
 }
 
-func (this *baseController) authcode($string, $operation = 'DECODE', $key = '', $expiry = 0) {
+func substr(str string, start int, lens int) (result string){
+	strlen := len(str)
+	rlen := lens
+	var r []byte
+	if lens + start >= strlen{
+		rlen = strlen - start
+	}
+	r = make([]byte, rlen)
+	copy(r, str[start:start+lens])
+	result = string(r)
+	return 
+}
 
-	$ckey_length = 4;	// 随机密钥长度 取值 0-32;
+func strlen(str string) in{
+	return len(str)
+}
+
+func md5(str string) string{
+	hash := md5.New()
+	hash.Write([]byte(str))
+	cipherText2 := hash.Sum(nil)
+	hexText := make([]byte, 32)
+	hex.Encode(hexText, cipherText2)
+	return string(hexText)
+}
+
+func time() in64{
+	return time.Now().Unix()
+}
+
+func microtime() int64{
+	return time.Now().UnixNano() / 1000000
+}
+
+func base64_encode(str string) string{
+	return base64.StdEncoding.EncodeToString([]byte(str))
+}
+
+func base64_decode(str string) string{
+	decoded, err := base64.StdEncoding.DecodeString(str)
+	if err != nil {
+		fmt.Println("base64_decode error:", err)
+		return ""
+	}
+	return string(decoded)
+}
+
+func sprintf(format string, a ...interface{}) string{
+	return fmt.Sprintf(format, a)
+}
+
+func range(start int, end int, step int) []int{
+	count := (end - start) / step
+	arr := make([]int, count)
+	
+	for int i = 0; i < count; i++{
+		arr[i] = start + i * step
+	}
+	
+	return arr
+}
+
+func ord(str string) int{
+	return int(rune(str[0]))
+}
+
+func chr(ch int) string{
+	return string(rune(ch))
+}
+
+func str_replace(s, old, new string, n int) string{
+	return strings.Replace(s, old, new, n)
+}
+
+//authcode(str string, $operation = 'DECODE', $key = '', $expiry = 0)
+func (this *baseController) authcode(str string, operation string, key string, expiry int64) {
+
+	ckey_length := 4;	// 随机密钥长度 取值 0-32;
 	// 加入随机密钥，可以令密文无任何规律，即便是原文和密钥完全相同，加密结果也会每次不同，增大破解难度。
 	// 取值越大，密文变动规律越大，密文变化 = 16 的 $ckey_length 次方
 	// 当此值为 0 时，则不产生随机密钥
 
-	$key = md5($key ? $key : UC_KEY);
-	$keya = md5(substr($key, 0, 16));
-	$keyb = md5(substr($key, 16, 16));
-	$keyc = $ckey_length ? ($operation == 'DECODE' ? substr($string, 0, $ckey_length): substr(md5(microtime()), -$ckey_length)) : '';
+	key = md5(key ? key : UC_KEY)
+	keya := md5(substr(key, 0, 16))
+	keyb := md5(substr(key, 16, 16))
+	
+	keyc = ""
+	if ckey_length != 0{
+		if operation == "DECODE"{
+			keyc = substr(str, 0, ckey_length)
+		}else{
+			keyc = substr(md5(utils.Int64ToStr(microtime())), -ckey_length)
+		}
+	}
+	//keyc = ckey_length ? (operation == "DECODE" ? substr(str, 0, ckey_length): substr(md5(microtime()), -ckey_length)) : ""
 
-	$cryptkey = $keya.md5($keya.$keyc);
-	$key_length = strlen($cryptkey);
+	cryptkey := keya + md5(keya + keyc)
+	key_length := strlen(cryptkey)
+	
+	if operation == "DECODE"{
+		str = base64_decode(substr(str, ckey_length))
+	}else{
+		var rexpiry int64
+		if expiry == 0{
+			rexpiry = 0
+		}else{
+			rexpiry = expiry + time()
+		}
+		str1 = sprintf("%010d", rexpiry)
+		str = str1 + substr(md5(str + keyb), 0, 16) + str
+	}
+	//str = operation == "DECODE" ? base64_decode(substr(str, ckey_length)) : sprintf("%010d", expiry ? expiry + time() : 0).substr(md5(str.keyb), 0, 16) + str
+	string_length := strlen(str)
 
-	$string = $operation == 'DECODE' ? base64_decode(substr($string, $ckey_length)) : sprintf('%010d', $expiry ? $expiry + time() : 0).substr(md5($string.$keyb), 0, 16).$string;
-	$string_length = strlen($string);
+	result := ""
+	box := range(0, 255, 1)
 
-	$result = '';
-	$box = range(0, 255);
-
-	$rndkey = array();
-	for($i = 0; $i <= 255; $i++) {
-		$rndkey[$i] = ord($cryptkey[$i % $key_length]);
+	rndkey := make([]int, 255)
+	for i = 0; i <= 255; i++ {
+		rndkey[i] = ord(cryptkey[i % key_length]);
 	}
 
-	for($j = $i = 0; $i < 256; $i++) {
-		$j = ($j + $box[$i] + $rndkey[$i]) % 256;
-		$tmp = $box[$i];
-		$box[$i] = $box[$j];
-		$box[$j] = $tmp;
+	for j = 0, i = 0; i < 256; i++ {
+		j = (j + box[i] + rndkey[i]) % 256
+		tmp := box[$i]
+		box[i] = box[j]
+		box[j] = tmp
 	}
 
-	for($a = $j = $i = 0; $i < $string_length; $i++) {
-		$a = ($a + 1) % 256;
-		$j = ($j + $box[$a]) % 256;
-		$tmp = $box[$a];
-		$box[$a] = $box[$j];
-		$box[$j] = $tmp;
-		$result .= chr(ord($string[$i]) ^ ($box[($box[$a] + $box[$j]) % 256]));
+	for a = j = i = 0; i < string_length; i++ {
+		a = (a + 1) % 256
+		j = (j + box[a]) % 256
+		tmp := box[a]
+		box[a] = box[j]
+		box[j] = tmp
+		result = result + chr(ord(str[i]) ^ (box[(box[a] + box[j]) % 256]))
 	}
 
-	if($operation == 'DECODE') {
-		if((substr($result, 0, 10) == 0 || substr($result, 0, 10) - time() > 0) && substr($result, 10, 16) == substr(md5(substr($result, 26).$keyb), 0, 16)) {
-			return substr($result, 26);
+	if operation == "DECODE" {
+		if (substr(result, 0, 10) == 0 || substr(result, 0, 10) - time() > 0) && substr(result, 10, 16) == substr(md5(substr(result, 26)+keyb), 0, 16) {
+			return substr(result, 26);
 		} else {
-			return '';
+			return "";
 		}
 	} else {
-		return $keyc.str_replace('=', '', base64_encode($result));
+		return keyc + str_replace("=", "", base64_encode(result), -1);
 	}
 
 }
@@ -249,7 +363,7 @@ func (this *baseController) page_get_start($page, $ppp, $totalnum) {
 	return ($page - 1) * $ppp;
 }
 
-func (this *baseController) load($model, $base = NULL, $release = '') {
+func (this *baseController) load(model string, base *baseController, release string) {
 	$base = $base ? $base : $this;
 	if(empty($_ENV[$model])) {
 		$release = !$release ? RELEASE_ROOT : $release;
@@ -342,18 +456,24 @@ func (this *baseController) get_avatar($uid, $size = 'big', $type = '') {
 	return  $dir1.'/'.$dir2.'/'.$dir3.'/'.substr($uid, -2).$typeadd."_avatar_$size.jpg";
 }
 
-func (this *baseController) &cache($cachefile) {
-	static $_CACHE = array();
-	if(!isset($_CACHE[$cachefile])) {
-		$cachepath = UC_DATADIR.'./cache/'.$cachefile.'.php';
-		if(!file_exists($cachepath)) {
-			$this->load('cache');
+func (this *baseController) cache(cachefile string) interface{}{
+	//static $_CACHE = array();
+	value, ok := _CACHE[cachefile]
+	if !ok {
+		cachepath := UC_DATADIR + "./cache/" + cachefile + ".cache"
+		if !utils.FileExists(cachepath) {
+			this.load("cache")
 			$_ENV['cache']->updatedata($cachefile);
 		} else {
-			include_once $cachepath;
+			//include_once $cachepath;
+			str := utils.ReadFileAll(cachepath)
+			var datamap []map[string]interface{}
+			json.Unmarshal([]byte(str), &datamap)
+			_CACHE[cachefile] = datamap
+			value = datamap
 		}
 	}
-	return $_CACHE[$cachefile];
+	return value//$_CACHE[$cachefile];
 }
 
 func (this *baseController) input($k) {
