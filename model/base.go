@@ -1,4 +1,4 @@
-package blog
+package model
 
 import (
 	"github.com/astaxie/beego"
@@ -29,7 +29,7 @@ type baseController struct {
 
 _CACHE := make(map[string]map[string]interface{})
 
-function getgpc($k, $var='R') {
+func getgpc($k, $var='R') {
 	switch($var) {
 		case 'G': $var = &$_GET break
 		case 'P': $var = &$_POST break
@@ -234,8 +234,8 @@ func chr(ch int) string{
 	return string(rune(ch))
 }
 
-func str_replace(s, old, new string, n int) string{
-	return strings.Replace(s, old, new, n)
+func str_replace(oldstr, newstr, s string, n int) string{
+	return strings.Replace(s, oldstr, newstr, n)
 }
 
 func strpos(str string, sep string) int{
@@ -358,6 +358,7 @@ func (this *baseController) page(num , perpage, curpage int, mpurl string) strin
 		ajaxtarget := ""
 		autogoto := false
 		simple := false
+		realpages := 0
 		if (curpage - offset > 1 && pages > pag{
 			multipage = "<a href=\"" + mpurl + "pag=1\" class=\"first\"" + ajaxtarget + ">1 ...</a>"
 		}
@@ -371,7 +372,7 @@ func (this *baseController) page(num , perpage, curpage int, mpurl string) strin
 				multipage = multipage + "<strong>" + utils.IntToStr(i) + "</strong>"
 			}else{
 				multipage = multipage + "<a href=\"" + mpurl + "pag=" + utils.IntToStr(i)// + ($ajaxtarget && $i == $pages && $autogoto ? '#' : '') 
-				if ajaxtarget && i == pages && autogoto{
+				if ajaxtarget != "" && i == pages && autogoto{
 					multipage = multipage + "#"
 				}
 				multipage = multipage + "\"" + ajaxtarget + ">" + utils.IntToStr(i) + "</a>"
@@ -380,9 +381,18 @@ func (this *baseController) page(num , perpage, curpage int, mpurl string) strin
 			//'<a href="'.$mpurl.'pag='.$i.($ajaxtarget && $i == $pages && $autogoto ? '#' : '').'"'.$ajaxtarget.'>'.$i.'</a>'
 		}
 
-		multipage .= (curpage < pages && !simple ? '<a href="'.$mpurl.'pag='.($curpage + 1).'" class="next"'.$ajaxtarget.'>&rsaquo&rsaquo</a>' : '').
-		($to < $pages ? '<a href="'.$mpurl.'pag='.$pages.'" class="last"'.$ajaxtarget.'>... '.$realpages.'</a>' : '').
-		(!$simple && $pages > $pag && !$ajaxtarget ? '<kbd><input type="text" name="custompage" size="3" onkeydown="if(event.keyCode==13) {window.location=\''.$mpurl.'pag=\'+this.value return false}" /></kbd>' : '')
+		if curpage < pages && !simple{
+			multipage = multipage + "<a href=\"" + mpurl + "pag="  + utils.IntToStr(curpage + 1) + "\" class=\"next\"" + ajaxtarget + ">&rsaquo&rsaquo</a>"
+		}
+		if to < pages{
+			multipage = multipage + "<a href=\"" + mpurl + "pag=" + utils.IntToStr(pages) + "\" class=\"last\"" + ajaxtarget + ">... "  + utils.IntToStr(realpages) + "</a>"
+		}
+		if !simple && pages > pag && ajaxtarget == ""{
+			multipage = multipage + "<kbd><input type=\"text\" name=\"custompage\" size=\"3\" onkeydown=\"if(event.keyCode==13) {window.location=\'" + mpurl + "pag=\'+this.value return false}\" /></kbd>"
+		}
+		//multipage .= (curpage < pages && !simple ? '<a href="'.$mpurl.'pag='.($curpage + 1).'" class="next"'.$ajaxtarget.'>&rsaquo&rsaquo</a>' : '').
+		//($to < $pages ? '<a href="'.$mpurl.'pag='.$pages.'" class="last"'.$ajaxtarget.'>... '.$realpages.'</a>' : '').
+		//(!$simple && $pages > $pag && !$ajaxtarget ? '<kbd><input type="text" name="custompage" size="3" onkeydown="if(event.keyCode==13) {window.location=\''.$mpurl.'pag=\'+this.value return false}" /></kbd>' : '')
 
 		if multipage != ""{
 			tempstr := "<div class=\"pages\">"
@@ -396,10 +406,22 @@ func (this *baseController) page(num , perpage, curpage int, mpurl string) strin
 	return multipage
 }
 
-func (this *baseController) page_get_start($page, $ppp, $totalnum) {
-	$totalpage = ceil($totalnum / $ppp)
-	$page =  max(1, min($totalpage, intval($page)))
-	return ($page - 1) * $ppp
+func max(x, y float64) float64{
+	return float64(math.Max(float64(x), float64(y)))
+}
+
+func min(x, y float64) float64{
+	return float64(math.Min(float64(x), float64(y)))
+}
+
+func intval(x float64) int{
+	return int(x)
+}
+
+func (this *baseController) page_get_start(page , ppp, totalnum int) int{
+	totalpage := ceil(totalnum / ppp)
+	page =  max(1, min(totalpage, intval(page)))
+	return (page - 1) * ppp
 }
 
 func (this *baseController) load(model string, base *baseController, release string) {
@@ -416,24 +438,52 @@ func (this *baseController) load(model string, base *baseController, release str
 	return $_ENV[$model]
 }
 
-func (this *baseController) get_setting($k = array(), $decode = FALSE) {
-	$return = array()
-	$sqladd = $k ? "WHERE k IN (".$this->implode($k).")" : ''
-	$settings = $this->db->fetch_all("SELECT * FROM ".UC_DBTABLEPRE."settings $sqladd")
-	if(is_array($settings)) {
-		foreach($settings as $arr) {
-			$return[$arr['k']] = $decode ? unserialize($arr['v']) : $arr['v']
+//$k = array(), $decode = FALSE
+func (this *baseController) get_setting(k []string, decode bool) map[string]string{
+	result := make(map[string]string)
+	sqladd := ""
+	if len(k) > 0{
+		sqladd = "WHERE k IN (" + this.implode(k) + ")"
+	}
+	//$sqladd = $k ? "WHERE k IN (" + this.implode(k) + ")" : ""
+	settings := this->db->fetch_all("SELECT * FROM " + UC_DBTABLEPRE + "settings " + sqladd)
+	if len(settings) > 0{
+		for _, value in range settings{
+			result[value['k']] = $decode ? unserialize(value['v']) : value['v']
 		}
 	}
-	return $return
+	// if(is_array($settings)) {
+	// 	foreach($settings as $arr) {
+	// 		result[arr['k']] = $decode ? unserialize(arr['v']) : arr['v']
+	// 	}
+	// }
+	return result
 }
 
-func (this *baseController) set_setting($k, $v, $encode = FALSE) {
-	$v = is_array($v) || $encode ? addslashes(serialize($v)) : $v
-	$this->db->query("REPLACE INTO ".UC_DBTABLEPRE."settings SET k='$k', v='$v'")
+func array_keys(maparr map[interface{}]interface{}) []interface{}{
+	keys := make([]interface{}, len(maparr))
+	for k := range maparr {
+        keys = append(keys, k)
+    }
+    return keys
 }
 
-func (this *baseController) message($message, $redirect = '', $type = 0, $vars = array()) {
+func array_values(maparr map[interface{}]interface{}) []interface{}{
+	keys := make([]interface{}, len(maparr))
+	for k := range maparr {
+        keys = append(keys, k)
+    }
+    return keys
+}
+
+//$k, $v, $encode = FALSE
+func (this *baseController) set_setting(k string, v string, encode bool) {
+	//$v = is_array($v) || $encode ? addslashes(serialize($v)) : $v
+	this->db->query("REPLACE INTO " + UC_DBTABLEPRE + "settings SET k=" + k + ", v=" + v)
+}
+
+// $redirect = '', $type = 0, $vars = array()
+func (this *baseController) message(message string, redirect string, typ int, $vars = array()) {
 	include_once UC_ROOT.'view/default/messages.lang.php'
 	if(isset($lang[$message])) {
 		$message = $lang[$message] ? str_replace(array_keys($vars), array_values($vars), $lang[$message]) : $message
@@ -442,57 +492,112 @@ func (this *baseController) message($message, $redirect = '', $type = 0, $vars =
 	$this->view->assign('redirect', $redirect)
 	if($type == 0) {
 		$this->view->display('message')
-	} elseif($type == 1) {
+	} else if($type == 1) {
 		$this->view->display('message_client')
 	}
 	exit
 }
 
-func (this *baseController) formhash() {
-	return substr(md5(substr($this->time, 0, -4).UC_KEY), 16)
+func (this *baseController) formhash() string{
+	return substr(md5(substr(utils.Int64ToStr(this.time), 0, -4) + UC_KEY), 16)
 }
 
-func (this *baseController) submitcheck() {
-	return @getgpc('formhash', 'P') == FORMHASH ? true : false
+func (this *baseController) submitcheck() bool{
+	return getgpc("formhash", "P") == formhash()
 }
 
-func (this *baseController) date($time, $type = 3) {
-	$format[] = $type & 2 ? (!empty($this->settings['dateformat']) ? $this->settings['dateformat'] : 'Y-n-j') : ''
-	$format[] = $type & 1 ? (!empty($this->settings['timeformat']) ? $this->settings['timeformat'] : 'H:i') : ''
-	return gmdate(implode(' ', $format), $time + $this->settings['timeoffset'])
+//$typ = 3
+func (this *baseController) date(time int64, typ int) string{
+	//format := typ & 2 ? (!empty(this.settings["dateformat"]) ? this.settings["dateformat"] : "Y-n-j") : ""
+	//format = typ & 1 ? (!empty(this.settings["timeformat"]) ? this.settings["timeformat"] : "H:i") : ""
+	if tye == 2{
+		if len(this.settings["dateformat"]) == 0{
+			format = "2006-Jan-2"
+		}else{
+			format = this.settings["dateformat"]
+		}
+	}
+	if tye == 1{
+		if len(this.settings["timeformat"]) == 0{
+			format = "15:04"
+		}else{
+			format = this.settings["timeformat"]
+		}
+	}
+	time = time + this.settings["timeoffset"]
+	nsec := time / 10000000000
+	tm := time.Unix(time, nsec)
+	return tm.Format(format)
+	//return gmdate(implode(" ", format), time + this.settings["timeoffset"])
 }
 
-func (this *baseController) implode($arr) {
-	return "'".implode("','", (array)$arr)."'"
+func implode(sep string, strarr []string) string{
+	return strings.Join(strarr, sep)
 }
 
-func (this *baseController) set_home($uid, $dir = '.') {
-	$uid = sprintf("%09d", $uid)
-	$dir1 = substr($uid, 0, 3)
-	$dir2 = substr($uid, 3, 2)
-	$dir3 = substr($uid, 5, 2)
-	!is_dir($dir.'/'.$dir1) && mkdir($dir.'/'.$dir1, 0777)
-	!is_dir($dir.'/'.$dir1.'/'.$dir2) && mkdir($dir.'/'.$dir1.'/'.$dir2, 0777)
-	!is_dir($dir.'/'.$dir1.'/'.$dir2.'/'.$dir3) && mkdir($dir.'/'.$dir1.'/'.$dir2.'/'.$dir3, 0777)
+func (this *baseController) implode(strarr []string) string{
+	return "'" + strings.Join(strarr, "','") + "'"
+	//return "'".implode("','", (array)$arr)."'"
 }
 
-func (this *baseController) get_home($uid) {
-	$uid = sprintf("%09d", $uid)
-	$dir1 = substr($uid, 0, 3)
-	$dir2 = substr($uid, 3, 2)
-	$dir3 = substr($uid, 5, 2)
-	return $dir1.'/'.$dir2.'/'.$dir3
+func is_dir(filepath string) bool{
+	fileinfo, err := os.Stat(filepath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false
+		}
+	}
+	return fileinfo.IsDir()
 }
 
-func (this *baseController) get_avatar($uid, $size = 'big', $type = '') {
-	$size = in_array($size, array('big', 'middle', 'small')) ? $size : 'big'
-	$uid = abs(intval($uid))
-	$uid = sprintf("%09d", $uid)
-	$dir1 = substr($uid, 0, 3)
-	$dir2 = substr($uid, 3, 2)
-	$dir3 = substr($uid, 5, 2)
-	$typeadd = $type == 'real' ? '_real' : ''
-	return  $dir1.'/'.$dir2.'/'.$dir3.'/'.substr($uid, -2).$typeadd."_avatar_$size.jpg"
+func mkdir(filepath string, mode uint32) bool{
+	err := os.MkdirAll(filepath, mode)
+	if err != nil {
+		return false
+	}
+	return true
+}
+
+//$dir = '.'
+func (this *baseController) set_home(uid int64, dir string) {
+	if dir == ""{
+		dir = "."
+	}
+	struid := sprintf("%09d", uid)
+	dir1 := substr(struid, 0, 3)
+	dir2 := substr(struid, 3, 2)
+	dir3 := substr(struid, 5, 2)
+	!is_dir(dir + "/" + dir1) && mkdir(dir + "/" + dir1, 0777)
+	!is_dir(dir + "/".dir1 + "/" + dir2) && mkdir(dir + "/" + dir1 + "/" + dir2, 0777)
+	!is_dir(dir + "/".dir1 + "/" + dir2 + "/" + dir3) && mkdir(dir + "/" + dir1 + "/" + dir2 + "/" + dir3, 0777)
+}
+
+func (this *baseController) get_home(uid int64) {
+	struid := sprintf("%09d", uid)
+	dir1 = substr(struid, 0, 3)
+	dir2 = substr(struid, 3, 2)
+	dir3 = substr(struid, 5, 2)
+	return dir1 + "/" + dir2 + "/" + dir3
+}
+
+// size = "big", type = ""
+func (this *baseController) get_avatar(uid int64, size string, typ string) string{
+	//size = in_array(size, array("big", "middle", "small")) ? size : "big"
+	if size != "big" && size != "middle" && size != "small"{
+		size = "big"
+	}
+	//uid = abs(intval(uid))
+	struid := sprintf("%09d", uid)
+	dir1 = substr(struid, 0, 3)
+	dir2 = substr(struid, 3, 2)
+	dir3 = substr(struid, 5, 2)
+
+	var typeadd string = ""
+	if typ == "real"{
+		typeadd = "_real"
+	}
+	//typeadd = typ == "real" ? "_real" : ""
+	return  dir1 + "/" + dir2 + "/" + dir3 + "/" + substr(struid, -2, 2) + typeadd + "_avatar_" + size + ".jpg"
 }
 
 func (this *baseController) cache(cachefile string) interface{}{
@@ -502,7 +607,7 @@ func (this *baseController) cache(cachefile string) interface{}{
 		cachepath := UC_DATADIR + "./cache/" + cachefile + ".cache"
 		if !utils.FileExists(cachepath) {
 			this.load("cache")
-			$_ENV['cache']->updatedata($cachefile)
+			$_ENV["cache"]->updatedata($cachefile)
 		} else {
 			//include_once $cachepath
 			str := utils.ReadFileAll(cachepath)
@@ -519,122 +624,185 @@ func (this *baseController) input($k) {
 	return isset($this->input[$k]) ? (is_array($this->input[$k]) ? $this->input[$k] : trim($this->input[$k])) : NULL
 }
 
-func (this *baseController) serialize($s, $htmlon = 0) {
-	if(file_exists(UC_ROOT.RELEASE_ROOT.'./lib/xml.class.php')) {
-		include_once UC_ROOT.RELEASE_ROOT.'./lib/xml.class.php'
-	} else {
-		include_once UC_ROOT.'./lib/xml.class.php'
+func file_exists(filepath string) bool{
+	if _, err := os.Stat(filepath); err != nil {
+		if os.IsNotExist(err) {
+			return false
+		}
 	}
-
-	return xml_serialize($s, $htmlon)
+	return true
 }
 
-func (this *baseController) unserialize($s) {
-	if(file_exists(UC_ROOT.RELEASE_ROOT.'./lib/xml.class.php')) {
-		include_once UC_ROOT.RELEASE_ROOT.'./lib/xml.class.php'
+//$htmlon = 0
+func (this *baseController) serialize(s string, htmlon int) {
+	if file_exists(UC_ROOT.RELEASE_ROOT + "./lib/xml.class.php") {
+		include_once UC_ROOT.RELEASE_ROOT."./lib/xml.class.php"
 	} else {
-		include_once UC_ROOT.'./lib/xml.class.php'
+		include_once UC_ROOT."./lib/xml.class.php"
 	}
 
-	return xml_unserialize($s)
+	return xml_serialize(s, htmlon)
 }
 
-func (this *baseController) cutstr($string, $length, $dot = ' ...') {
-	if(strlen($string) <= $length) {
-		return $string
+func (this *baseController) unserialize(s string) {
+	if file_exists(UC_ROOT.RELEASE_ROOT + "./lib/xml.class.php") {
+		include_once UC_ROOT.RELEASE_ROOT."./lib/xml.class.php"
+	} else {
+		include_once UC_ROOT."./lib/xml.class.php"
 	}
 
-	$string = str_replace(array('&amp', '&quot', '&lt', '&gt'), array('&', '"', '<', '>'), $string)
+	return xml_unserialize(s)
+}
 
-	$strcut = ''
-	if(strtolower(UC_CHARSET) == 'utf-8') {
+func strtolower(str string) string{
+	return strings.ToLower(str)
+}
+//$dot = ' ...'
+func (this *baseController) cutstr(str string, length int, dot string) string{
+	if strlen(str) <= $length {
+		return str
+	}
 
-		$n = $tn = $noc = 0
-		while($n < strlen($string)) {
+	if dot == ""{
+		dot = " ..."
+	}
 
-			$t = ord($string[$n])
-			if($t == 9 || $t == 10 || (32 <= $t && $t <= 126)) {
-				$tn = 1 $n++ $noc++
-			} elseif(194 <= $t && $t <= 223) {
-				$tn = 2 $n += 2 $noc += 2
-			} elseif(224 <= $t && $t < 239) {
-				$tn = 3 $n += 3 $noc += 2
-			} elseif(240 <= $t && $t <= 247) {
-				$tn = 4 $n += 4 $noc += 2
-			} elseif(248 <= $t && $t <= 251) {
-				$tn = 5 $n += 5 $noc += 2
-			} elseif($t == 252 || $t == 253) {
-				$tn = 6 $n += 6 $noc += 2
+	str = str_replace("&amp", "&", str)
+	str = str_replace("&quot", "\"", str)
+	str = str_replace("&lt", "<", str)
+	str = str_replace("&gt", ">", str)
+	//str = str_replace(array('&amp', '&quot', '&lt', '&gt'), array('&', '"', '<', '>'), $str)
+
+	tmpstrcut := ""
+	if strtolower(UC_CHARSET) == "utf-8" {
+
+		n := 0
+		tn := 0
+		noc := 0
+		while n < strlen(str) {
+
+			t := ord(str[n])
+			if t == 9 || t == 10 || (32 <= t && t <= 126) {
+				tn = 1 n++ noc++
+			} else if 194 <= t && t <= 223 {
+				tn = 2 n += 2 noc += 2
+			} else if 224 <= t && t < 239 {
+				tn = 3 n += 3 noc += 2
+			} else if 240 <= t && t <= 247 {
+				tn = 4 n += 4 noc += 2
+			} else if 248 <= t && t <= 251 {
+				tn = 5 n += 5 noc += 2
+			} else if t == 252 || t == 253 {
+				tn = 6 n += 6 noc += 2
 			} else {
-				$n++
+				n++
 			}
 
-			if($noc >= $length) {
+			if noc >= length {
 				break
 			}
 
 		}
-		if($noc > $length) {
-			$n -= $tn
+		if noc > length {
+			n -= tn
 		}
 
-		$strcut = substr($string, 0, $n)
+		tmpstrcut = substr(str, 0, n)
 
 	} else {
-		for($i = 0 $i < $length $i++) {
-			$strcut .= ord($string[$i]) > 127 ? $string[$i].$string[++$i] : $string[$i]
+		for i = 0; i < length; i++ {
+			if ord(str[i]) > 127{
+				tmpstrcut = tmpstrcut + str[i].str[++i]
+			}else{
+				tmpstrcut = tmpstrcut + str[i]
+			}
+			//tmpstrcut = tmpstrcut + ord(str[i]) > 127 ? str[i].str[++i] : str[i]
 		}
 	}
 
-	$strcut = str_replace(array('&', '"', '<', '>'), array('&amp', '&quot', '&lt', '&gt'), $strcut)
+	tmpstrcut = str_replace("&", "&amp", tmpstrcut)
+	tmpstrcut = str_replace("\"", "&quot", tmpstrcut)
+	tmpstrcut = str_replace("<", "&lt", tmpstrcut)
+	tmpstrcut = str_replace(">", "&gt", tmpstrcut)
+	//tmpstrcut = str_replace(array('&', '"', '<', '>'), array('&amp', '&quot', '&lt', '&gt'), tmpstrcut)
 
-	return $strcut.$dot
+	return tmpstrcut + dot
 }
 
-func (this *baseController) setcookie($key, $value, $life = 0, $httponly = false) {
-	(!defined('UC_COOKIEPATH')) && define('UC_COOKIEPATH', '/')
-	(!defined('UC_COOKIEDOMAIN')) && define('UC_COOKIEDOMAIN', '')
+var UC_COOKIEPATH string = "/"
+var UC_COOKIEDOMAIN string = ""
 
-	if($value == '' || $life < 0) {
-		$value = ''
-		$life = -1
+func setcookie(name, value string, expire time.Time, path, domain string, secure, httponly bool) {
+	cookie := new(http.Cookie)
+	cookie.Name = name
+	cookie.Value = value
+	cookie.Expires = expire
+	cookie.Path = path
+	cookie.Domain = domain
+	cookie.Secure = secure
+	cookie.HttpOnly = httponly
+	http.SetCookie(rw, cookie)
+}
+
+//life = 0, $httponly = false
+func (this *baseController) setcookie(key, value string, life int64, httponly bool) {
+	//(!defined('UC_COOKIEPATH')) && define('UC_COOKIEPATH', '/')
+	//(!defined('UC_COOKIEDOMAIN')) && define('UC_COOKIEDOMAIN', '')
+
+	if value == "" || life < 0 {
+		value = ""
+		life = -1
+	}
+
+	if life > 0{
+		life = this.time + life
+	}else if life < 0{
+		life = this.time - 31536000
+	}else{
+		life = 0
 	}
 	
-	$life = $life > 0 ? $this->time + $life : ($life < 0 ? $this->time - 31536000 : 0)
-	$path = $httponly && PHP_VERSION < '5.2.0' ? UC_COOKIEPATH." HttpOnly" : UC_COOKIEPATH
-	$secure = $_SERVER['SERVER_PORT'] == 443 ? 1 : 0
-	if(PHP_VERSION < '5.2.0') {
-		setcookie($key, $value, $life, $path, UC_COOKIEDOMAIN, $secure)
+	//$life = $life > 0 ? $this->time + $life : ($life < 0 ? $this->time - 31536000 : 0)
+	var path string
+	if httponly{
+		path = UC_COOKIEPATH + " HttpOnly"
+	}else{
+		path = UC_COOKIEPATH
+	}
+	//$path = $httponly && PHP_VERSION < '5.2.0' ? UC_COOKIEPATH." HttpOnly" : UC_COOKIEPATH
+	secure := $_SERVER['SERVER_PORT'] == 443 ? 1 : 0
+	// if(PHP_VERSION < '5.2.0') {
+	// 	setcookie($key, $value, $life, $path, UC_COOKIEDOMAIN, $secure)
+	// } else {
+	setcookie($key, $value, $life, $path, UC_COOKIEDOMAIN, $secure, $httponly)
+	//}
+}
+
+func (this *baseController) note_exists() bool{
+	noteexists := this.db.fetch_first("SELECT value FROM " + UC_DBTABLEPRE + "vars WHERE name='noteexists'")
+	if len(noteexists) == 0 {
+		return false
 	} else {
-		setcookie($key, $value, $life, $path, UC_COOKIEDOMAIN, $secure, $httponly)
+		return true
 	}
 }
 
-func (this *baseController) note_exists() {
-	$noteexists = $this->db->fetch_first("SELECT value FROM ".UC_DBTABLEPRE."vars WHERE name='noteexists'")
-	if(empty($noteexists)) {
-		return FALSE
+func (this *baseController) mail_exists() bool{
+	mailexists := this.db.fetch_first("SELECT value FROM " + UC_DBTABLEPRE + "vars WHERE name='mailexists'")
+	if len(mailexists) == 0 {
+		return false
 	} else {
-		return TRUE
+		return true
 	}
 }
 
-func (this *baseController) mail_exists() {
-	$mailexists = $this->db->fetch_first("SELECT value FROM ".UC_DBTABLEPRE."vars WHERE name='mailexists'")
-	if(empty($mailexists)) {
-		return FALSE
-	} else {
-		return TRUE
-	}
-}
-
-func (this *baseController) dstripslashes($string) {
-	if(is_array($string)) {
-		foreach($string as $key => $val) {
-			$string[$key] = $this->dstripslashes($val)
-		}
-	} else {
-		$string = stripslashes($string)
-	}
-	return $string
+func (this *baseController) dstripslashes(str string) string{
+	// if(is_array($string)) {
+	// 	foreach($string as $key => $val) {
+	// 		$string[$key] = $this->dstripslashes($val)
+	// 	}
+	// } else {
+	// 	$string = stripslashes($string)
+	// }
+	return str
 }
