@@ -5,16 +5,16 @@ import (
 	"os"
 )
 
-type adminbase struct {
+type adminbaseController struct {
 	baseController
 	cookie_status int
 }
 
-func (this *adminbase) __construct() {
-	$this->adminbase();
+func (this *adminbaseController) __construct() {
+	$this->adminbaseController();
 }
 
-func (this *adminbase) Init() {
+func (this *adminbaseController) Init() {
 	baseController.Init()
 
 	var sid string
@@ -36,7 +36,7 @@ func (this *adminbase) Init() {
 	}
 }
 
-func (this *adminbase) check_priv() {
+func (this *adminbaseController) check_priv() {
 	username = this.sid_decode(this.view.sid)
 	if empty(username) {
 		header("Location: " + UC_API + "/admin.php?m=user&a=login&iframe=" + getgpc("iframe", "G") + (this.cookie_status ? "" : "&sid=" + this.view.sid))
@@ -65,11 +65,11 @@ func (this *adminbase) check_priv() {
 	}
 }
 
-func (this *adminbase) is_founder(username) {
+func (this *adminbaseController) is_founder(username) {
 	return this.user["isfounder"]
 }
 
-func (this *adminbase) writelog(action, extra string) {
+func (this *adminbaseController) writelog(action, extra string) {
 	log = htmlspecialchars(this.user["username"] + "\t" + this.onlineip + "\t" + utils.Int64ToStr(this.time) + "\t" + action + "\t" + extra)
 	logfile = UC_ROOT + "./data/logs/" + gmdate("Ym", this.time) + ".php"
 
@@ -109,7 +109,7 @@ func (this *adminbase) writelog(action, extra string) {
 	// }
 }
 
-func (this *adminbase) fetch_plugins() {
+func (this *adminbaseController) fetch_plugins() {
 	plugindir = UC_ROOT + "./plugin"
 	d = opendir(plugindir)
 	while f = readdir(d) {
@@ -120,7 +120,7 @@ func (this *adminbase) fetch_plugins() {
 	}
 }
 
-func (this *adminbase) _call($a, $arg) {
+func (this *adminbaseController) _call($a, $arg) {
 	if(method_exists($this, $a) && $a{0} != '_') {
 		$this->$a();
 	} else {
@@ -128,7 +128,7 @@ func (this *adminbase) _call($a, $arg) {
 	}
 }
 
-func (this *adminbase) sid_encode($username) {
+func (this *adminbaseController) sid_encode($username) {
 	$ip = $this->onlineip;
 	$agent = $_SERVER['HTTP_USER_AGENT'];
 	$authkey = md5($ip.$agent.UC_KEY);
@@ -136,7 +136,7 @@ func (this *adminbase) sid_encode($username) {
 	return rawurlencode($this->authcode("$username\t$check", 'ENCODE', $authkey, 1800));
 }
 
-func (this *adminbase) sid_decode($sid) {
+func (this *adminbaseController) sid_decode($sid) {
 	$ip = $this->onlineip;
 	$agent = $_SERVER['HTTP_USER_AGENT'];
 	$authkey = md5($ip.$agent.UC_KEY);

@@ -29,14 +29,27 @@ type baseController struct {
 
 _CACHE := make(map[string]map[string]interface{})
 
-func getgpc($k, $var='R') {
-	switch($var) {
-		case 'G': $var = &$_GET break
-		case 'P': $var = &$_POST break
-		case 'C': $var = &$_COOKIE break
-		case 'R': $var = &$_REQUEST break
+func daddslashes($string, $force = 0, $strip = FALSE) {
+	if(!MAGIC_QUOTES_GPC || $force) {
+		if(is_array($string)) {
+			foreach($string as $key => $val) {
+				$string[$key] = daddslashes($val, $force, $strip);
+			}
+		} else {
+			$string = addslashes($strip ? stripslashes($string) : $string);
+		}
 	}
-	return isset($var[$k]) ? $var[$k] : NULL
+	return $string;
+}
+
+func getgpc($k, $t='R') {
+	switch($t) {
+		case 'P': $var = &$_POST; break;
+		case 'G': $var = &$_GET; break;
+		case 'C': $var = &$_COOKIE; break;
+		case 'R': $var = &$_REQUEST; break;
+	}
+	return isset($var[$k]) ? (is_array($var[$k]) ? $var[$k] : trim($var[$k])) : NULL;
 }
 
 func (this *baseController) Init() {
