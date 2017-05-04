@@ -1,6 +1,8 @@
 package model
 
 import (
+	"github.com/astaxie/beego"
+	"github.com/astaxie/beego/orm"
 	"math/rand"
 	"os"
 )
@@ -8,11 +10,12 @@ import (
 type adminbaseController struct {
 	baseController
 	cookie_status int
+	admin map[string]interface{}
 }
 
-func (this *adminbaseController) __construct() {
-	$this->adminbaseController();
-}
+// func (this *adminbaseController) __construct() {
+// 	$this->adminbaseController();
+// }
 
 func (this *adminbaseController) Init() {
 	baseController.Init()
